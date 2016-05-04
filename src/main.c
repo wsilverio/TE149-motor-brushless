@@ -8,6 +8,7 @@
 #include <msp430.h>     // PxOUT, PxIN, ...
 #include <stdint.h>     // int8_t, int16_t, ...
 #include <stdbool.h>    // bool
+#include <stdlib.h>     // itoa
 
 typedef enum { STOP, MIN, MED, MAX } MODE;
 
@@ -30,34 +31,35 @@ typedef enum { STOP, MIN, MED, MAX } MODE;
 
 void delay_us(uint16_t us);
 void delay_ms(uint16_t ms);
-void itoa(long unsigned int value, char* result);
 void serial_config();
-void serial_print_byte(int8_t data);
-void serial_print_string(char* data);
+void serial_print_byte(const int8_t data);
+void serial_print_string(const char* data);
 void servo_config();
-void servo_write_degree(uint8_t degree);
-void servo_write_pulse(uint16_t ms);
+void servo_write_degree(const uint8_t degree);
+void servo_write_pulse(const uint16_t ms);
 uint16_t servo_get_pulse();
 uint16_t degree_to_ms(uint8_t degree);
 
 volatile uint16_t servoPulse = 0;
 
-volatile bool buttonFlag = false;
 volatile bool loopFlag = false;
+volatile bool buttonFlag = false;
+volatile bool serialFlag = false;
 
 volatile uint16_t rpm = 0;
 volatile uint16_t flagTimer = 0;
 
 volatile MODE step = STOP;
 
-char strValue[10]; // string de uso geral
+char strRpmValue[8];   // string de uso geral
+char strSerialValue[8]; // string de uso geral
 
 void main(){
     // desabilita watchdog
     WDTCTL = WDTPW + WDTHOLD;
 
     //16Mhz
-    if (CALBC1_16MHZ==0xFF){
+    if (0xFF == CALBC1_16MHZ){
         while(1);
     }
 
@@ -141,12 +143,12 @@ void main(){
     loopFlag = true;
 
     while(1){
-        uint32_t vel_rpm = rpm;
-        itoa(vel_rpm, strValue);
-        serial_print_string(strValue);
-        serial_print_string(";\n");
+        // uint32_t vel_rpm = rpm;
+        // itoa(vel_rpm, strRpmValue, 10);
+        // serial_print_string(strRpmValue);
+        // serial_print_string(";\n");
 
-        delay_ms(1000);
+        // delay_ms(1000);
     }
 }
 
@@ -170,7 +172,7 @@ __interrupt void interrupt_port_1(){
 
         if (loopFlag){
 
-            if(++step > MAX)
+            if(MAX < ++step)
                 step = STOP;
 
             switch (step){
@@ -209,6 +211,23 @@ __interrupt void interrupt_timer_A1(){
     TA1CCTL0 &= ~CCIFG;
 }
 
+#pragma vector = USCIAB0RX_VECTOR
+__interrupt void serial_receive(){
+
+    static uint8_t i = 0;
+
+    char val = UCA0RXBUF;
+
+    strSerialValue[i++] = val;
+
+    if('\n' == val){
+        int intVal = atoi(strSerialValue);
+        // serialFlag = true;
+    }else if(8 <= i){
+        strSerialValue[0] = i = 0; // '\0'
+    }
+}
+
 void servo_config(){
     TA0CTL = TASSEL_2 | ID_3 | MC_1;    // SMCLK, DIV(8), UP CCR0
     TA0CCTL1 |= OUTMOD_7;               // PWM set/reset
@@ -216,11 +235,11 @@ void servo_config(){
     TA0CCR1 = 0;                        // reset
 }
 
-void servo_write_pulse(uint16_t ms){
+void servo_write_pulse(const uint16_t ms){
     TA0CCR1 = 2*ms;
 }
 
-void servo_write_degree(uint8_t degree){
+void servo_write_degree(const uint8_t degree){
     servo_write_pulse( degree_to_ms(degree) );
 }
 
@@ -229,9 +248,9 @@ uint16_t servo_get_pulse(){
 }
 
 uint16_t degree_to_ms(uint8_t degree){
-    if(degree > SERVOMAXDEGREE){
+    if(SERVOMAXDEGREE < degree){
         degree = SERVOMAXDEGREE;
-    }else if(degree < SERVOMINDEGREE){
+    }else if(SERVOMINDEGREE > degree){
         degree = SERVOMINDEGREE;
     }
 
@@ -257,14 +276,14 @@ void serial_config(){
     IE2 |= UCA0RXIE;
 }
 
-void serial_print_byte(int8_t data){
+void serial_print_byte(const int8_t data){
     // aguarda buffer vazio
     while(!(IFG2 & UCA0TXIFG));
     // escreve o dado no registrador
     UCA0TXBUF = data;
 }
 
-void serial_print_string(char* data){
+void serial_print_string(const char* data){
     while(*data){
         serial_print_byte(*data);
         data++;
@@ -280,27 +299,5 @@ void delay_ms(uint16_t ms){
 void delay_us(uint16_t us){
     while(us--){
         __delay_cycles(16);
-    }
-}
-
-void itoa(long unsigned int value, char* result){
-    char* ptr = result, *ptr1 = result;
-    int tmp_value;
-
-    do {
-        tmp_value = value;
-        value /= 10;
-        *ptr++ = "zyxwvutsrqponmlkjihgfedcba9876543210123456789abcdefghijklmnopqrstuvwxyz" [35 + (tmp_value - value * 10)];
-    } while ( value );
-
-    // Apply negative sign
-    if (tmp_value < 0) *ptr++ = '-';
-
-    *ptr-- = '\0';
-    while(ptr1 < ptr) {
-        char* tmp_char;
-        tmp_char = *ptr;
-        *ptr--= *ptr1;
-        *ptr1++ = tmp_char;
     }
 }

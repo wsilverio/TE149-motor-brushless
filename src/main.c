@@ -24,9 +24,7 @@ typedef enum { STOP, MIN, MED, MAX } MODE;
 #define SERVOMINPULSE   1150    // 1.15ms
 #define SERVOMAXPULSE   2000    // 2ms
 #define SERVOMEDPULSE   (SERVOSTOPPULSE+SERVOMAXPULSE)/2
-#define SERVOMINDEGREE  0
-#define SERVOMAXDEGREE  179
-#define RPMMAX          5000
+#define RPMMAX          6000
 #define RPMMIN          2000
 
 void delay_us(uint16_t us);
@@ -38,7 +36,6 @@ void servo_config();
 void servo_write_degree(const uint8_t degree);
 void servo_write_pulse(const uint16_t ms);
 uint16_t servo_get_pulse();
-uint16_t degree_to_ms(uint8_t degree);
 
 volatile uint16_t servoPulse = 0;
 
@@ -216,15 +213,39 @@ __interrupt void serial_receive(){
 
     static uint8_t i = 0;
 
+    static bool overflow = false;
+
     char val = UCA0RXBUF;
 
-    strSerialValue[i++] = val;
 
-    if('\n' == val){
-        int intVal = atoi(strSerialValue);
-        // serialFlag = true;
-    }else if(8 <= i){
-        strSerialValue[0] = i = 0; // '\0'
+    if (i==7 && val != '\n'){
+
+        overflow = true;
+        serial_print_string("Overflow\n");
+        
+        for (uint8_t j=0; j<8; j++){
+            strSerialValue[j]=0;
+        }
+        i=0;
+    }else if(i<=7){
+        
+        strSerialValue[i] = val;
+        i++;
+
+        if (val=='\n'){
+            if(!overflow){
+                strSerialValue[i-1]=0;
+                int valint = atoi(strSerialValue);
+                serial_print_byte('*');
+                serial_print_string(strSerialValue);
+                serial_print_byte('*');
+            }else{overflow=false;}
+        
+            i=0;
+            for (uint8_t j=0; j<8; j++){
+                strSerialValue[j]=0;
+            }
+        }
     }
 }
 
@@ -245,16 +266,6 @@ void servo_write_degree(const uint8_t degree){
 
 uint16_t servo_get_pulse(){
     return TA0CCR1;
-}
-
-uint16_t degree_to_ms(uint8_t degree){
-    if(SERVOMAXDEGREE < degree){
-        degree = SERVOMAXDEGREE;
-    }else if(SERVOMINDEGREE > degree){
-        degree = SERVOMINDEGREE;
-    }
-
-    return (uint16_t)(SERVOSTOPPULSE + (SERVOMAXPULSE - SERVOSTOPPULSE) * ((float)degree / SERVOMAXDEGREE));
 }
 
 void serial_config(){

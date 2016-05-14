@@ -2,6 +2,7 @@
 ###################
 *.elf
 *.run
+*.ini
 
 ## Core latex/pdflatex auxiliary files:
 *.aux

@@ -9,8 +9,9 @@
 #include <stdint.h>     // int8_t, int16_t, ...
 #include <stdbool.h>    // bool
 #include <stdlib.h>     // itoa
+#include <string.h>     // ftoa
 
-typedef enum { STOP, MIN, MED, MAX } MODE;
+// #define SERIAL_DBG
 
 #define LEDPIN          BIT0    // P1.0 (RED LED)
 #define BUTTONPIN       BIT3    // P1.3 (S2)
@@ -19,45 +20,45 @@ typedef enum { STOP, MIN, MED, MAX } MODE;
 #define MOTORINPIN      BIT4    // P1.4
 #define MOTOROUTPIN     BIT6    // P1.6 / TA01 / GREEN LED
 
-#define MOTORPOLES      7
+#define MOTORPOLES      7.0
 #define SERVOSTOPPULSE  1000    // 1ms
-#define SERVOMINPULSE   1150    // 1.15ms
 #define SERVOMAXPULSE   2000    // 2ms
-#define SERVOMEDPULSE   (SERVOSTOPPULSE+SERVOMAXPULSE)/2
-#define RPMMAX          6000
-#define RPMMIN          2000
+// #define RPMMAX          6000
+// #define RPMMIN          2000
 
-#define NM 20.0 //numero de medias
-#define ALPHA NM/(NM+1) //coeficiente exponencial
+#define SERIALPRINTTIME 250
 
-void delay_us(uint16_t us);
+#define NM              20.0        // numero de medias
+#define ALPHA           NM/(NM+1)   // coeficiente exponencial
+
+// void delay_us(uint16_t us);
 void delay_ms(uint16_t ms);
 void serial_config();
 void serial_print_byte(const int8_t data);
 void serial_print_string(const char* data);
 void servo_config();
 void servo_write_pulse(const uint16_t ms);
-uint16_t servo_get_pulse();
+// uint16_t servo_get_pulse();
+void ftoa(float n, char *res, int casas);
+float _pow(float base, float expoente);
 
 volatile uint16_t servoPulse = 0;
 
 volatile bool loopFlag = false;
-volatile bool buttonFlag = false;
-volatile bool serialFlag = false;
+volatile bool stopFlag = false;
+// volatile bool buttonFlag = false;
 
 volatile uint16_t rpm[2];
 volatile uint16_t flagTimer = 0;
 
-volatile MODE step = STOP;
-
-char strRpmValue[8];   // string de uso geral
+char strRpmValue[8];    // string de uso geral
 char strSerialValue[8]; // string de uso geral
 
 void main(){
     // desabilita watchdog
     WDTCTL = WDTPW + WDTHOLD;
 
-    //16Mhz
+    // config. clock 16Mhz
     if (0xFF == CALBC1_16MHZ){
         while(1);
     }
@@ -66,6 +67,7 @@ void main(){
     BCSCTL1 = CALBC1_16MHZ;
     DCOCTL = CALDCO_16MHZ;
 
+    // config. I/O
     P1DIR |= (MOTOROUTPIN | LEDPIN);    // saidas
     P1SEL |= (MOTOROUTPIN);             // pwm out
     P1REN |= (MOTORINPIN | BUTTONPIN);  // habilita resistores
@@ -77,7 +79,8 @@ void main(){
     serial_config();
     servo_config();
 
-    rpm[0]=rpm[1]=0;
+    // zera as medidas
+    rpm[0] = rpm[1] = 0;
 
     // configura o timer A1
     TA1CTL    = TASSEL_2 | ID_0 | MC_1; // smclk, div 1, up CCR0
@@ -85,77 +88,24 @@ void main(){
     TA1CCR0   = 50000-1;                // @16MHz -> 1/320 = 3,125ms para estourar
 
     // configura interrupcao motor
-    P1IE  |= (MOTORINPIN);  // habilita interrupcao
-    P1IES |= (MOTORINPIN);  // borda de descida
+    P1IE  |= (MOTORINPIN | BUTTONPIN);  // habilita interrupcao
+    P1IES |= (MOTORINPIN | BUTTONPIN);  // borda de descida
     P1IFG  = 0;             // limpa IFG
-
-    serial_print_string("Hell");
-    while(1){}
-
 
     __enable_interrupt();
 
+    servo_write_pulse(SERVOSTOPPULSE);
 
-    // calibacao brushless
-    if (!(P1IN & BUTTONPIN)){
-        // pulso maximo por 2s
-        servo_write_pulse(SERVOMAXPULSE);
-
-        // sinaliza modo configuracao (pisca 3x)
-        uint8_t i;
-        for(i = 0; i < 3; ++i){
-            P1OUT |= LEDPIN;
-            delay_ms(50);
-            P1OUT &= ~LEDPIN;
-            delay_ms(250);
-        }
-
-        // aguarda botao livre
-        while(!(P1IN & BUTTONPIN));
-        // espera 1s
-        delay_ms(1000);
-
-        // configura interrupcao botao
-        P1IE  |= (BUTTONPIN);  // habilita interrupcao
-        P1IES |= (BUTTONPIN);  // borda de descida
-        P1IFG &= ~(BUTTONPIN); // limpa IFG
-
-        P1OUT |= LEDPIN;
-        // aguarda usuario
-        buttonFlag = false;
-        while(!buttonFlag);
-
-        P1OUT &= ~LEDPIN;
-
-        // pulso minimo por 2s
-        servo_write_pulse(SERVOSTOPPULSE);
-        delay_ms(2000);
-
-    }else{
-        // configura interrupcao botao
-        P1IE  |= (BUTTONPIN);  // habilita interrupcao
-        P1IES |= (BUTTONPIN);  // borda de descida
-        P1IFG &= ~(BUTTONPIN); // limpa IFG
-    }
-
-    P1OUT |= LEDPIN;
-    // aguarda comando de inicio
-    buttonFlag = false;
-    while(!buttonFlag);
-    // apaga o led
-    P1OUT &= ~LEDPIN;
-
-    buttonFlag = false;
     loopFlag = true;
 
-    serial_print_string("HW");
     while(1){
-        // uint32_t vel_rpm = rpm;
-        // itoa(vel_rpm, strRpmValue, 10);
-        // serial_print_string(strRpmValue);
-        // serial_print_string(";\n");
-
-        // delay_ms(1000);
+        if(!stopFlag){
+            P1OUT ^= LEDPIN;
+            delay_ms(SERIALPRINTTIME);
+            itoa(rpm[1], strRpmValue, 10);
+            serial_print_string(strRpmValue);
+            serial_print_byte('\n');
+        }
     }
 }
 
@@ -164,45 +114,33 @@ __interrupt void interrupt_port_1(){
     if (P1IFG & MOTORINPIN){
 
         // captura tempo atual
-        double delta_t = (62.5e-9*TA1R + 3.125e-3*flagTimer);
+        uint16_t overTimer = flagTimer;
+        uint16_t timerCount = TA1R;
+        float delta_t = (62.5e-9*timerCount + 3.125e-3*overTimer);
         flagTimer = TA1R = 0;
 
         // conversao para RPM
-        uint16_t rpmInst = (uint16_t)(1.0/delta_t / MOTORPOLES * 60.0);
+        uint16_t rpmInst = (uint16_t)((60.0/MOTORPOLES)/delta_t);
+        
         rpm[1] = ALPHA*rpm[0]+(1-ALPHA)*rpmInst;
         rpm[0] = rpm[1];
-        itoa(rpm[1], strRpmValue, 10);
-
-        serial_print_string(strRpmValue);
-        serial_print_byte('\n');
-
+        
         // limpa flag de interrupcao
         P1IFG &= ~MOTORINPIN;
 
     }else if (P1IFG & BUTTONPIN){
 
-        buttonFlag = true;
+        P1OUT ^= LEDPIN;
 
-        if (loopFlag){
+        if(loopFlag){
 
-            if(MAX < ++step)
-                step = STOP;
+            stopFlag = !stopFlag;
 
-            switch (step){
-                case STOP:
-                    servo_write_pulse(SERVOSTOPPULSE);
-                    break;
-                case MIN:
-                    servo_write_pulse(SERVOMINPULSE);
-                    break;
-                case MED:
-                    servo_write_pulse(SERVOMEDPULSE);
-                    break;
-                case MAX:
-                    servo_write_pulse(SERVOMAXPULSE);
-                    break;
-                default:
-                    break;
+            if(stopFlag){
+                TA0CTL &= ~MC_0;    // desliga o timer
+                P1OUT &= ~LEDPIN;   // apaga o led
+            }else{
+                TA0CTL |= MC_1;     // liga o timer
             }
         }
 
@@ -219,7 +157,7 @@ __interrupt void interrupt_port_1(){
 #pragma vector = TIMER1_A0_VECTOR
 __interrupt void interrupt_timer_A1(){
 
-    flagTimer++;
+    ++flagTimer;
 
     TA1CCTL0 &= ~CCIFG;
 }
@@ -233,30 +171,36 @@ __interrupt void serial_receive(){
 
     char val = UCA0RXBUF;
 
-
-    if (i==7 && val != '\n'){
+    if (7==i && '\n' != val){
 
         overflow = true;
-        serial_print_string("Overflow\n");
+
+#ifdef SERIAL_DBG
+        serial_print_string("\n*** buffer overflow ***\n");
+#endif        
         
         for (uint8_t j=0; j<8; j++){
             strSerialValue[j]=0;
         }
-        i=0;
-    }else if(i<=7){
+
+        i = 0;
+    }else if(7 >= i){
         
         strSerialValue[i] = val;
         i++;
 
-        if (val=='\n'){
+        if ('\n' == val){
             if(!overflow){
-                strSerialValue[i-1]=0;
-                int valint = atoi(strSerialValue);
-                servo_write_pulse(valint);
-                //serial_print_string(strSerialValue);
-            }else{overflow=false;}
+                strSerialValue[i-1] = '\0';
+                int pulseWidth = atoi(strSerialValue);
+                if(SERVOSTOPPULSE <= pulseWidth && SERVOMAXPULSE >= pulseWidth ){
+                    servo_write_pulse(pulseWidth);
+                }
+            }else{
+                overflow=false;
+            }
         
-            i=0;
+            i = 0;
             for (uint8_t j=0; j<8; j++){
                 strSerialValue[j]=0;
             }
@@ -275,9 +219,9 @@ void servo_write_pulse(const uint16_t ms){
     TA0CCR1 = 2*ms;
 }
 
-uint16_t servo_get_pulse(){
-    return TA0CCR1;
-}
+// uint16_t servo_get_pulse(){
+//     return TA0CCR1;
+// }
 
 void serial_config(){
     P1SEL  |= (SERIALRXPIN | SERIALTXPIN);
@@ -288,10 +232,10 @@ void serial_config(){
     UCA0CTL1 |= UCSSEL_2;
     UCA0MCTL &= ~UCOS16;
 
-    // 9600 bps
-    UCA0BR1 = 0x06;
-    UCA0BR0 = 0x82;
-    UCA0MCTL |= 0x0A;
+    // 115200 bps
+    UCA0BR1 = 0x00;
+    UCA0BR0 = 0x8A;
+    UCA0MCTL |= 0x0E;
 
     UCA0CTL1 &= ~UCSWRST;
 
@@ -318,8 +262,33 @@ void delay_ms(uint16_t ms){
     }
 }
 
-void delay_us(uint16_t us){
+/*void delay_us(uint16_t us){
     while(us--){
         __delay_cycles(16);
     }
+}*/
+
+#ifdef SERIAL_DBG
+void ftoa(float n, char *res, int casas){
+    // parte inteira do número
+    int iparte = (int) n;
+    // parte flutuante (após a vírgula)
+    float fparte = n - (float) iparte;
+    // carrega a parte inteira na string
+    itoa(iparte, res, 10);
+    if (casas != 0){
+        // adiciona o 'ponto'
+        strcat(res, ".");
+        // tranforma a parte flutuante
+        fparte = fparte * f_pow(10, casas);
+        // concatena a parte flutuante à parte inteira
+        itoa((int)fparte, res + strlen(res), 10);
+    }
 }
+
+float f_pow(float base, float expoente){
+    float n = base;
+    while(--expoente) n *= base;
+    return n;
+}
+#endif

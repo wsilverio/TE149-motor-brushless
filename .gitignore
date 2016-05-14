@@ -1,6 +1,7 @@
 # Compiled source #
 ###################
 *.elf
+*.run
 
 ## Core latex/pdflatex auxiliary files:
 *.aux

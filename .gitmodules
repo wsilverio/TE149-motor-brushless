@@ -1,0 +1,3 @@
+[submodule "brushless-panel/third-party/imgui"]
+	path = brushless-panel/third-party/imgui
+	url = https://github.com/ocornut/imgui.git

@@ -24,10 +24,11 @@ typedef enum { STOP, MIN, MED, MAX } MODE;
 #define SERVOMINPULSE   1150    // 1.15ms
 #define SERVOMAXPULSE   2000    // 2ms
 #define SERVOMEDPULSE   (SERVOSTOPPULSE+SERVOMAXPULSE)/2
-#define SERVOMINDEGREE  0
-#define SERVOMAXDEGREE  179
-#define RPMMAX          5000
+#define RPMMAX          6000
 #define RPMMIN          2000
+
+#define NM 20.0 //numero de medias
+#define ALPHA NM/(NM+1) //coeficiente exponencial
 
 void delay_us(uint16_t us);
 void delay_ms(uint16_t ms);
@@ -35,10 +36,8 @@ void serial_config();
 void serial_print_byte(const int8_t data);
 void serial_print_string(const char* data);
 void servo_config();
-void servo_write_degree(const uint8_t degree);
 void servo_write_pulse(const uint16_t ms);
 uint16_t servo_get_pulse();
-uint16_t degree_to_ms(uint8_t degree);
 
 volatile uint16_t servoPulse = 0;
 
@@ -46,7 +45,7 @@ volatile bool loopFlag = false;
 volatile bool buttonFlag = false;
 volatile bool serialFlag = false;
 
-volatile uint16_t rpm = 0;
+volatile uint16_t rpm[2];
 volatile uint16_t flagTimer = 0;
 
 volatile MODE step = STOP;
@@ -78,6 +77,8 @@ void main(){
     serial_config();
     servo_config();
 
+    rpm[0]=rpm[1]=0;
+
     // configura o timer A1
     TA1CTL    = TASSEL_2 | ID_0 | MC_1; // smclk, div 1, up CCR0
     TA1CCTL0 |= CCIE;                   // interrupcao por comparacao
@@ -88,7 +89,12 @@ void main(){
     P1IES |= (MOTORINPIN);  // borda de descida
     P1IFG  = 0;             // limpa IFG
 
+    serial_print_string("Hell");
+    while(1){}
+
+
     __enable_interrupt();
+
 
     // calibacao brushless
     if (!(P1IN & BUTTONPIN)){
@@ -142,6 +148,7 @@ void main(){
     buttonFlag = false;
     loopFlag = true;
 
+    serial_print_string("HW");
     while(1){
         // uint32_t vel_rpm = rpm;
         // itoa(vel_rpm, strRpmValue, 10);
@@ -161,7 +168,13 @@ __interrupt void interrupt_port_1(){
         flagTimer = TA1R = 0;
 
         // conversao para RPM
-        rpm = (uint16_t)(1.0/delta_t / MOTORPOLES * 60.0);
+        uint16_t rpmInst = (uint16_t)(1.0/delta_t / MOTORPOLES * 60.0);
+        rpm[1] = ALPHA*rpm[0]+(1-ALPHA)*rpmInst;
+        rpm[0] = rpm[1];
+        itoa(rpm[1], strRpmValue, 10);
+
+        serial_print_string(strRpmValue);
+        serial_print_byte('\n');
 
         // limpa flag de interrupcao
         P1IFG &= ~MOTORINPIN;
@@ -216,15 +229,38 @@ __interrupt void serial_receive(){
 
     static uint8_t i = 0;
 
+    static bool overflow = false;
+
     char val = UCA0RXBUF;
 
-    strSerialValue[i++] = val;
 
-    if('\n' == val){
-        int intVal = atoi(strSerialValue);
-        // serialFlag = true;
-    }else if(8 <= i){
-        strSerialValue[0] = i = 0; // '\0'
+    if (i==7 && val != '\n'){
+
+        overflow = true;
+        serial_print_string("Overflow\n");
+        
+        for (uint8_t j=0; j<8; j++){
+            strSerialValue[j]=0;
+        }
+        i=0;
+    }else if(i<=7){
+        
+        strSerialValue[i] = val;
+        i++;
+
+        if (val=='\n'){
+            if(!overflow){
+                strSerialValue[i-1]=0;
+                int valint = atoi(strSerialValue);
+                servo_write_pulse(valint);
+                //serial_print_string(strSerialValue);
+            }else{overflow=false;}
+        
+            i=0;
+            for (uint8_t j=0; j<8; j++){
+                strSerialValue[j]=0;
+            }
+        }
     }
 }
 
@@ -239,22 +275,8 @@ void servo_write_pulse(const uint16_t ms){
     TA0CCR1 = 2*ms;
 }
 
-void servo_write_degree(const uint8_t degree){
-    servo_write_pulse( degree_to_ms(degree) );
-}
-
 uint16_t servo_get_pulse(){
     return TA0CCR1;
-}
-
-uint16_t degree_to_ms(uint8_t degree){
-    if(SERVOMAXDEGREE < degree){
-        degree = SERVOMAXDEGREE;
-    }else if(SERVOMINDEGREE > degree){
-        degree = SERVOMINDEGREE;
-    }
-
-    return (uint16_t)(SERVOSTOPPULSE + (SERVOMAXPULSE - SERVOSTOPPULSE) * ((float)degree / SERVOMAXDEGREE));
 }
 
 void serial_config(){

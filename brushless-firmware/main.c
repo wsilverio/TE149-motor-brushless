@@ -50,6 +50,7 @@ volatile bool stopFlag = false;
 
 volatile uint16_t rpm[2];
 volatile uint16_t flagTimer = 0;
+volatile int pulseWidth = SERVOSTOPPULSE;
 
 char strRpmValue[8];    // string de uso geral
 char strSerialValue[8]; // string de uso geral
@@ -130,18 +131,8 @@ __interrupt void interrupt_port_1(){
 
     }else if (P1IFG & BUTTONPIN){
 
-        P1OUT ^= LEDPIN;
-
         if(loopFlag){
 
-            stopFlag = !stopFlag;
-
-            if(stopFlag){
-                TA0CTL &= ~MC_0;    // desliga o timer
-                P1OUT &= ~LEDPIN;   // apaga o led
-            }else{
-                TA0CTL |= MC_1;     // liga o timer
-            }
         }
 
         // debouncing
@@ -171,7 +162,7 @@ __interrupt void serial_receive(){
 
     char val = UCA0RXBUF;
 
-    if (7==i && '\n' != val){
+    if (7 == i && '\n' != val){
 
         overflow = true;
 
@@ -190,9 +181,9 @@ __interrupt void serial_receive(){
         i++;
 
         if ('\n' == val){
-            if(!overflow){
+            if(!overflow && !stopFlag){
                 strSerialValue[i-1] = '\0';
-                int pulseWidth = atoi(strSerialValue);
+                pulseWidth = atoi(strSerialValue);
                 if(SERVOSTOPPULSE <= pulseWidth && SERVOMAXPULSE >= pulseWidth ){
                     servo_write_pulse(pulseWidth);
                 }
@@ -232,10 +223,10 @@ void serial_config(){
     UCA0CTL1 |= UCSSEL_2;
     UCA0MCTL &= ~UCOS16;
 
-    // 115200 bps
-    UCA0BR1 = 0x00;
-    UCA0BR0 = 0x8A;
-    UCA0MCTL |= 0x0E;
+    // 9600 bps
+    UCA0BR1 = 0x06;
+    UCA0BR0 = 0x82;
+    UCA0MCTL |= 0x0A;
 
     UCA0CTL1 &= ~UCSWRST;
 

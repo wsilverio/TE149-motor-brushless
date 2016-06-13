@@ -10,7 +10,10 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-void serial_config(const uint32_t smclk, const uint32_t bps);
+#define SERIAL_SMCLK 16000000
+#define SERIAL_BAUD 9600
+
+void serial_config();
 void serial_print_byte(const int8_t data);
 void serial_print_string(const char* data);
 // bool serial_available();

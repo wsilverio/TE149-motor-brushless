@@ -9,59 +9,57 @@
 // bool serialAvailable = false;
 // char serialLastChar = 0;
 
-void serial_config(const uint32_t smclk, const uint32_t bps){
+void serial_config(){
     // software reset enabled
     UCA0CTL1 |= UCSWRST;
 
     // clock source select: SMCLK
     UCA0CTL1 |= UCSSEL_2;
 
-    uint32_t ucbr = 0, ucbrs = 0;
+    uint16_t ucbr;
+    uint8_t ucbrs;
 
-//    switch(smclk){
-//        case 1000000:{
-//            switch(bps){
-//                case 9600:{
-//                    ucbr = 104;
-//                    ucbrs = 1;
-//                }break;
-//                case 115200:{
-//                    ucbr = 8;
-//                    ucbrs = 6;
-//                }break;
-//                default:{}break;
-//            }
-//        }break;
-//
-//        case 8000000:{
-//            switch(bps){
-//                case 9600:{
-//                    ucbr = 833;
-//                    ucbrs = 2;
-//                }break;
-//                case 115200:{
-//                    ucbr = 69;
-//                    ucbrs = 4;
-//                }break;
-//                default:{}break;
-//            }
-//        }break;
-//
-//        case 16000000:{
-//            switch(bps){
-//                case 9600:{
-                    ucbr = 1666;
-                    ucbrs = 6;
-//                }break;
-//                case 115200:{
-//                    ucbr = 138;
-//                    ucbrs = 7;
-//                }break;
-//                default:{}break;
-//            }
-//        }break;
-//        default:{}break;
-//    }
+#ifndef SERIAL_SMCLK
+#error SERIAL_SMCLK is not defined
+#endif
+
+#ifndef SERIAL_BAUD
+#error SERIAL_BAUD is not defined
+#endif
+
+#if SERIAL_SMCLK == 1000000 // 1MHz
+#if SERIAL_BAUD == 9600
+    ucbr = 104;
+    ucbrs = 1;
+#elif SERIAL_BAUD == 115200
+    ucbr = 8;
+    ucbrs = 6;
+#else
+#error Baudrate not implemented
+#endif
+#elif SERIAL_SMCLK == 8000000 // 8MHz
+#if SERIAL_BAUD == 9600
+    ucbr = 833;
+    ucbrs = 2;
+#elif SERIAL_BAUD == 115200
+    ucbr = 69;
+    ucbrs = 4;
+#else
+#error Baudrate not implemented
+#endif
+#elif SERIAL_SMCLK == 16000000 // 16MHz
+#if SERIAL_BAUD == 9600
+    ucbr = 1666;
+    ucbrs = 6;
+#elif SERIAL_BAUD == 115200
+    ucbr = 138;
+    ucbrs = 7;
+#else
+#error Baudrate not implemented
+#endif
+#else
+#error SMCLK not implemented
+#endif
 
     UCA0BR0 = (ucbr&0x00FF);
     UCA0BR1 = (ucbr&0xFF00)>>8;

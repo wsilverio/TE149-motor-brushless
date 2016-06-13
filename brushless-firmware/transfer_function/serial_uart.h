@@ -11,7 +11,7 @@
 #include <stdbool.h>
 
 #define SERIAL_SMCLK 16000000
-#define SERIAL_BAUD 9600
+#define SERIAL_BAUD 115200
 
 void serial_config();
 void serial_print_byte(const int8_t data);

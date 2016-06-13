@@ -16,7 +16,7 @@
 // #define RPMMAX 6000
 // #define RPMMIN 2000
 // amostragem
-#define SAMPLINGINTERVAL (4000<<1)-1 // 4 ms
+#define SAMPLINGINTERVAL (10000<<1)-1 // 10 ms
 // media exponencial movel
 #define NM 20.0 // numero de medias
 #define ALPHA NM/(NM+1) // coeficiente exponencial
@@ -63,6 +63,7 @@ int main(){
 
     uint16_t rpm[2] = {0}; // velocidade em RPM
     char strRpmValue[16]; // string de uso geral
+    uint16_t rpmInst = 0;
 
     __enable_interrupt();
 
@@ -72,14 +73,22 @@ int main(){
         if(sendSerial){
             sendSerial = false;
             // calcula a velocidade
-            float delta_t = (62.5e-9*timerCount + 3.125e-3*overTimer);
-            uint16_t rpmInst = (uint16_t)((60.0f/7.0f)/delta_t); // 60s/polos
+//            float delta_t = (62.5e-9*timerCount + 3.125e-3*overTimer);
+//            if(delta_t != 0){
+//                rpmInst = (uint16_t)((60.0f/7.0f)/delta_t); // 60s/polos
+//            }
             // media exponencial movel
-            rpm[1] = ALPHA*rpm[0]+(1-ALPHA)*rpmInst;
-            rpm[0] = rpm[1];
+//            rpm[1] = ALPHA*rpm[0]+(1-ALPHA)*rpmInst;
+//            rpm[0] = rpm[1];
             // converte para string
-            itoa_base_10(rpm[1], strRpmValue);
+//            itoa_base_10(rpm[1], strRpmValue);
             // envia pela serial
+//            serial_print_string(strRpmValue);
+//            serial_print_byte('\n');
+            itoa_base_10(timerCount, strRpmValue);
+            serial_print_string(strRpmValue);
+            serial_print_byte(',');
+            itoa_base_10(overTimer, strRpmValue);
             serial_print_string(strRpmValue);
             serial_print_byte('\n');
         }
@@ -116,6 +125,7 @@ void __attribute__ ((interrupt(USCIAB0RX_VECTOR))) USCI0RX_ISR(void)
                 strSerialValue[i-1] = '\0';
                 uint16_t pulseWidth = atoi(strSerialValue);
                 if(SERVOSTOPPULSE <= pulseWidth && SERVOMAXPULSE >= pulseWidth ){
+                    serial_print_byte('*');
                     servo_write_pulse(pulseWidth);
                 }
             }else{

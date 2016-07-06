@@ -61,16 +61,23 @@
 #define NM 20.0 // numero de medias
 #define ALPHA NM/(NM+1) // coeficiente exponencial
 // ganhos do controlador
-#define KP 0.253680f
-#define KI 0.747880f
-#define KD 0.021513f
+
+// PID TUNNER
+// #define KP 0.253680f
+// #define KI 0.747880f
+// #define KD 0.021513f
+
+// // Prof
+#define KP 1.6779
+#define KI 0.1766
+#define KD 7.9700
 
 //--------------------------------------------------------------------------
 // clock
 void clock_config();
 // servo
 void servo_config();
-inline void servo_write_pulse(uint16_t ms);
+inline void servo_write_pulse(int16_t ms);
 // cronometro
 void cronometro_config();
 // GPIO
@@ -115,7 +122,7 @@ int main(){
 
     __enable_interrupt(); // habilita interrupcoes
 
-    // calibracao do ESC
+   // calibracao do ESC
     servo_write_pulse(SERVOMAXPULSE); // pulso max
     P1OUT |= REDLEDPIN; // sinaliza
     buttonFlag = true;
@@ -136,7 +143,7 @@ int main(){
     uint16_t rpmInst = 0; // velocidade instantanea
     uint16_t rpm[2] = {0}; // velocidade em RPM (media exp movel)
     int16_t intError = 0; // integral do erro
-    uint16_t lastSetPoint = 0;
+    uint16_t lastSetRPM = 0;
 
     // loop principal
     while(1){
@@ -165,45 +172,47 @@ int main(){
             }
 
             // derivada
-            int16_t difSetPoint = setPoint - lastSetPoint;
-            lastSetPoint = setPoint;
+            int16_t difRPM = rpm[0] - lastSetRPM;
+            lastSetRPM = rpm[0];
 
             // ajuste fino
-            int16_t ajuste = SERVOSTOPPULSE - 0;
+            int16_t ajuste = SERVOSTOPPULSE;
+            // int16_t ajuste = 0;
 
             // aplica o controlador
-            static uint16_t pulse = 0;
-//            pulse = (uint16_t)(error*KP + intError*KI - difSetPoint*KD + ajuste);
-            pulse += error;
+            int16_t pulse = (int16_t)(error*KP + intError*KI - difRPM*KD + ajuste);
+            
             servo_write_pulse(pulse);
 
             // envia dados pela serial
-//            itoa_base_10(setPoint, generalStr);
-//            serial_print_string(generalStr);
-//            serial_print_byte('\t');
+           itoa_base_10(setPoint, generalStr);
+           serial_print_string(generalStr);
+           serial_print_byte('\t');
 
-//            itoa_base_10(rpm[0], generalStr);
-//            serial_print_string(generalStr);
-//            serial_print_byte('\t');
-
-//            itoa_base_10(pulse, generalStr);
-//            serial_print_string(generalStr);
-//            serial_print_byte('\t');
+           itoa_base_10(rpm[0], generalStr);
+           serial_print_string(generalStr);
+           serial_print_byte('\t');
 
             itoa_base_10(error, generalStr);
             serial_print_string(generalStr);
             serial_print_byte('\t');
 
+           itoa_base_10(nextPulse, generalStr);
+           serial_print_string(generalStr);
+           serial_print_byte('\t');            
+
 //            itoa_base_10(intError, generalStr);
 //            serial_print_string(generalStr);
 //            serial_print_byte('\t');
 
-//            itoa_base_10(difSetPoint, generalStr);
+//            itoa_base_10(difRPM, generalStr);
 //            serial_print_string(generalStr);
 //            serial_print_byte('\n');
 
-            itoa_base_10(pulse, generalStr);
-            serial_print_string(generalStr);
+            // itoa_base_10(pulse, generalStr);
+            // serial_print_string(generalStr);
+            // serial_print_byte('\n');
+
             serial_print_byte('\n');
         }
     }
@@ -259,10 +268,16 @@ void __attribute__ ((interrupt(USCIAB0RX_VECTOR))) USCI0RX_ISR(void)
             if(!overflow){
                 strSerialValue[i-1] = '\0';
                 uint16_t serialVal = atoi(strSerialValue);
-                if(RPMMIN <= serialVal && RPMMAX >= serialVal){
-                    serial_print_byte('*');
-                    setPoint = serialVal;
+                
+                if(RPMMIN > serialVal){
+                    serialVal = RPMMIN;
+                }else if(RPMMAX < serialVal){
+                    serialVal = RPMMAX;
                 }
+
+                serial_print_byte('*');
+                setPoint = serialVal;
+
             }else{
                 overflow=false;
             }
@@ -367,7 +382,11 @@ void __attribute__ ((interrupt(TIMER0_A1_VECTOR))) Timer0_A1 (void)
 #error Compiler not supported!
 #endif
 {
+#if defined(__TI_COMPILER_VERSION__) || defined(__IAR_SYSTEMS_ICC__)    
     switch(__even_in_range(TA0IV, TA0IV_TAIFG)){
+#else
+    switch(TA0IV){
+#endif
 //        case TA0IV_NONE: break;
 //        case TA0IV_TACCR1: break;
         case TA0IV_TACCR2:
@@ -429,12 +448,12 @@ void servo_config(){
 //      SERVOMAXPULSE: limite superior
 //      SERVOMINPULSE: limite inferior
 //==========================================================================
-inline void servo_write_pulse(uint16_t ms){
+inline void servo_write_pulse(int16_t ms){
     // limita o pulso
-    if(ms > SERVOMAXPULSE){
-        ms = SERVOMAXPULSE;
-    }else if(nextPulse < SERVOSTOPPULSE){
-        ms = SERVOSTOPPULSE;
+    if(ms > 1900){
+        ms = 1900;
+    }else if(nextPulse < 1100){
+        ms = 1100;
     }
 
     nextPulse = (ms<<1)-1; // prox. pwm

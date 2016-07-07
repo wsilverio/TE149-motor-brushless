@@ -3,7 +3,7 @@
 // TE149-motor-brushless
 // Controlador PID Digital para motor brushless
 //
-// Disciplina TE149 - Instrumentação Eletrônica - UFPR 2016/1
+// Disciplina TE149 - Instrumentacao Eletronica - UFPR 2016/1
 // Prof. Marlio Bonfim
 //
 // Autores:

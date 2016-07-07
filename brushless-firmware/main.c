@@ -185,9 +185,9 @@ int main(){
             servo_write_pulse(pulse);
 
             // envia dados pela serial
-           itoa_base_10(setPoint, generalStr);
-           serial_print_string(generalStr);
-           serial_print_byte('\t');
+           // itoa_base_10(setPoint, generalStr);
+           // serial_print_string(generalStr);
+           // serial_print_byte('\t');
 
            itoa_base_10(rpm[0], generalStr);
            serial_print_string(generalStr);
@@ -197,21 +197,21 @@ int main(){
             serial_print_string(generalStr);
             serial_print_byte('\t');
 
-           itoa_base_10(nextPulse, generalStr);
+           // itoa_base_10(nextPulse, generalStr);
+           // serial_print_string(generalStr);
+           // serial_print_byte('\t');            
+
+           itoa_base_10(intError, generalStr);
            serial_print_string(generalStr);
-           serial_print_byte('\t');            
+           serial_print_byte('\t');
 
-//            itoa_base_10(intError, generalStr);
-//            serial_print_string(generalStr);
-//            serial_print_byte('\t');
-
-//            itoa_base_10(difRPM, generalStr);
-//            serial_print_string(generalStr);
-//            serial_print_byte('\n');
+           // itoa_base_10(difRPM, generalStr);
+           // serial_print_string(generalStr);
+           // serial_print_byte('\t');
 
             // itoa_base_10(pulse, generalStr);
             // serial_print_string(generalStr);
-            // serial_print_byte('\n');
+            // serial_print_byte('\t');
 
             serial_print_byte('\n');
         }
@@ -450,10 +450,10 @@ void servo_config(){
 //==========================================================================
 inline void servo_write_pulse(int16_t ms){
     // limita o pulso
-    if(ms > 1900){
-        ms = 1900;
-    }else if(nextPulse < 1100){
-        ms = 1100;
+    if(ms > SERVOMAXPULSE){
+        ms = SERVOMAXPULSE;
+    }else if(nextPulse < SERVOSTOPPULSE){
+        ms = SERVOSTOPPULSE;
     }
 
     nextPulse = (ms<<1)-1; // prox. pwm

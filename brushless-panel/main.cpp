@@ -124,7 +124,7 @@ int main(int argc, char const *argv[]){
             ImGui::Spacing();
             ImGui::Spacing();
 
-            ImGui::Text("SNR:"); ImGui::SameLine(); ImGui::TextColored(ImVec4(1.0f,1.0f,0.0f,1.0f), "%d", 123);
+            // ImGui::Text("SNR:"); ImGui::SameLine(); ImGui::TextColored(ImVec4(1.0f,1.0f,0.0f,1.0f), "%d", 123);
 
             ImGui::End();
         }

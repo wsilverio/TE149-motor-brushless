@@ -51,7 +51,7 @@
 // servo
 #define SERVOSTOPPULSE 1000 // 1ms
 #define SERVOMAXPULSE 2000  // 2ms
-#define SERVOINIPULSE 1215 // aprox 5000 rpm
+// #define SERVOINIPULSE 1215 // aprox 5000 rpm
 // intervalo de velocidade
 #define RPMMAX 8000
 #define RPMMIN 2000
@@ -61,16 +61,6 @@
 #define NM 20.0 // numero de medias
 #define ALPHA NM/(NM+1) // coeficiente exponencial
 // ganhos do controlador
-
-// PID TUNNER
-// #define KP 0.253680f
-// #define KI 0.747880f
-// #define KD 0.021513f
-
-// // Prof
-#define KP 1.6779
-#define KI 0.1766
-#define KD 7.9700
 
 //--------------------------------------------------------------------------
 // clock
@@ -91,7 +81,6 @@ void delay_ms(uint16_t ms);
 //--------------------------------------------------------------------------
 // servo
 volatile uint16_t nextPulse = 0; // prox. pulso
-volatile uint16_t setPoint = 5000; // vel. desejada
 // amostragem
 volatile bool amostrar = false;
 // timer
@@ -102,6 +91,8 @@ volatile uint16_t overTimer = 0;
 char strSerialValue[8] = {'\0'}; // string de uso geral
 // GPIO
 volatile bool buttonFlag = true;
+// serial 
+uint16_t serialVal = 0;
 
 //==========================================================================
 //
@@ -122,28 +113,11 @@ int main(){
 
     __enable_interrupt(); // habilita interrupcoes
 
-   // calibracao do ESC
-    servo_write_pulse(SERVOMAXPULSE); // pulso max
-    P1OUT |= REDLEDPIN; // sinaliza
-    buttonFlag = true;
-    while(buttonFlag); // aguarda botao
-    P1OUT &= ~REDLEDPIN;
-    delay_ms(2000);
-
-    servo_write_pulse(SERVOSTOPPULSE); // pulso min
-    P1OUT |= REDLEDPIN; // sinaliza
-    buttonFlag = true;
-    while(buttonFlag); // aguarda botao
-    P1OUT &= ~REDLEDPIN;
-    delay_ms(2000);
-
-    servo_write_pulse(SERVOINIPULSE); // vel inicial
-
     char generalStr[16] = {'\0'}; // string de uso geral
     uint16_t rpmInst = 0; // velocidade instantanea
     uint16_t rpm[2] = {0}; // velocidade em RPM (media exp movel)
-    int16_t intError = 0; // integral do erro
-    uint16_t lastSetRPM = 0;
+    // int16_t intError = 0; // integral do erro
+    // uint16_t lastSetRPM = 0;
 
     // loop principal
     while(1){
@@ -162,58 +136,14 @@ int main(){
             rpm[1] = ALPHA*rpm[0]+(1-ALPHA)*rpmInst;
             rpm[0] = rpm[1];
 
-            int16_t error = setPoint - rpm[0]; // erro
-
-            // limita a integral do erro em 10%
-            if(error > (0.1f*setPoint) || error < (-0.1f*setPoint)){
-                intError = 0;
-            }else{
-                intError += error;
-            }
-
-            // derivada
-            int16_t difRPM = rpm[0] - lastSetRPM;
-            lastSetRPM = rpm[0];
-
-            // ajuste fino
-            int16_t ajuste = SERVOSTOPPULSE;
-            // int16_t ajuste = 0;
-
-            // aplica o controlador
-            int16_t pulse = (int16_t)(error*KP + intError*KI - difRPM*KD + ajuste);
-            
-            servo_write_pulse(pulse);
-
-            // envia dados pela serial
-           // itoa_base_10(setPoint, generalStr);
-           // serial_print_string(generalStr);
-           // serial_print_byte('\t');
-
-           itoa_base_10(rpm[0], generalStr);
-           serial_print_string(generalStr);
-           serial_print_byte('\t');
-
-            itoa_base_10(error, generalStr);
+            itoa_base_10(serialVal, generalStr);
             serial_print_string(generalStr);
-            serial_print_byte('\t');
+            serial_print_byte('\t');           
 
-           // itoa_base_10(nextPulse, generalStr);
-           // serial_print_string(generalStr);
-           // serial_print_byte('\t');            
-
-           itoa_base_10(intError, generalStr);
-           serial_print_string(generalStr);
-           serial_print_byte('\t');
-
-           // itoa_base_10(difRPM, generalStr);
-           // serial_print_string(generalStr);
-           // serial_print_byte('\t');
-
-            // itoa_base_10(pulse, generalStr);
-            // serial_print_string(generalStr);
-            // serial_print_byte('\t');
-
+            itoa_base_10(rpm[0], generalStr);
+            serial_print_string(generalStr);
             serial_print_byte('\n');
+
         }
     }
 
@@ -267,16 +197,15 @@ void __attribute__ ((interrupt(USCIAB0RX_VECTOR))) USCI0RX_ISR(void)
         if ('\n' == val){
             if(!overflow){
                 strSerialValue[i-1] = '\0';
-                uint16_t serialVal = atoi(strSerialValue);
+                serialVal = atoi(strSerialValue);
                 
-                if(RPMMIN > serialVal){
-                    serialVal = RPMMIN;
-                }else if(RPMMAX < serialVal){
-                    serialVal = RPMMAX;
+                if(SERVOMAXPULSE < serialVal){
+                    serialVal = SERVOMAXPULSE;
+                }else if(SERVOSTOPPULSE > serialVal){
+                    serialVal = SERVOSTOPPULSE;
                 }
 
-                serial_print_byte('*');
-                setPoint = serialVal;
+                servo_write_pulse(serialVal);
 
             }else{
                 overflow=false;

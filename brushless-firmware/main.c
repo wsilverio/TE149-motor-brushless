@@ -198,13 +198,6 @@ void __attribute__ ((interrupt(USCIAB0RX_VECTOR))) USCI0RX_ISR(void)
             if(!overflow){
                 strSerialValue[i-1] = '\0';
                 serialVal = atoi(strSerialValue);
-                
-                if(SERVOMAXPULSE < serialVal){
-                    serialVal = SERVOMAXPULSE;
-                }else if(SERVOSTOPPULSE > serialVal){
-                    serialVal = SERVOSTOPPULSE;
-                }
-
                 servo_write_pulse(serialVal);
 
             }else{
@@ -378,13 +371,6 @@ void servo_config(){
 //      SERVOMINPULSE: limite inferior
 //==========================================================================
 inline void servo_write_pulse(uint16_t ms){
-    // limita o pulso
-    // if(ms > SERVOMAXPULSE){
-    //     ms = SERVOMAXPULSE;
-    // }else if(nextPulse < SERVOSTOPPULSE){
-    //     ms = SERVOSTOPPULSE;
-    // }
-
     nextPulse = (ms<<1)-1; // prox. pwm
 }
 

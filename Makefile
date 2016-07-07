@@ -12,7 +12,7 @@ panel:
 	@c++ `sdl2-config --cflags` -I brushless-panel/third-party/imgui brushless-panel/main.cpp brushless-panel/imgui_impl_sdl.cpp brushless-panel/third-party/imgui/imgui*.cpp `sdl2-config --libs` -lGL -o brushless-panel/brushless_panel.run
 
 install_dependencies:
-	apt-get install mspdebug gcc-msp430
+	apt-get install build-essential mspdebug gcc-msp430
 
 clean:
 	@if [ -e brushless-firmware/firmware.elf ]; then echo "brushless-firmware/firmware.elf" && rm brushless-firmware/firmware.elf; fi

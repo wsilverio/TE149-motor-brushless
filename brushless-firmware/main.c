@@ -67,7 +67,7 @@
 void clock_config();
 // servo
 void servo_config();
-inline void servo_write_pulse(int16_t ms);
+inline void servo_write_pulse(uint16_t ms);
 // cronometro
 void cronometro_config();
 // GPIO
@@ -377,13 +377,13 @@ void servo_config(){
 //      SERVOMAXPULSE: limite superior
 //      SERVOMINPULSE: limite inferior
 //==========================================================================
-inline void servo_write_pulse(int16_t ms){
+inline void servo_write_pulse(uint16_t ms){
     // limita o pulso
-    if(ms > SERVOMAXPULSE){
-        ms = SERVOMAXPULSE;
-    }else if(nextPulse < SERVOSTOPPULSE){
-        ms = SERVOSTOPPULSE;
-    }
+    // if(ms > SERVOMAXPULSE){
+    //     ms = SERVOMAXPULSE;
+    // }else if(nextPulse < SERVOSTOPPULSE){
+    //     ms = SERVOSTOPPULSE;
+    // }
 
     nextPulse = (ms<<1)-1; // prox. pwm
 }

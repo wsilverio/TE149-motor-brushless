@@ -1,161 +1,236 @@
+//==========================================================================
+//
 // TE149-motor-brushless
 // Controlador PID Digital para motor brushless
-// Disciplina TE149 - Instrumentação Eletrônica - UFPR 2016/1
-// https://github.com/wsilverio/TE149-motor-brushless
 //
-// compilado com "msp430-gcc", C99 para mcu=msp430g2553
+// Disciplina TE149 - Instrumenta��o Eletr�nica - UFPR 2016/1
+// Prof. Marlio Bonfim
+//
+// Autores:
+//    Guilherme Restani: https://github.com/GuilhermeRestani
+//    Wendeurick Silverio: https://github.com/wsilverio
+//   _   _ _____ ____  ____    ____   ___  _  __
+//  | | | |  ___|  _ \|  _ \  |___ \ / _ \/ |/ /_
+//  | | | | |_  | |_) | |_) |   __) | | | | | '_ \
+//  | |_| |  _| |  __/|  _ <   / __/| |_| | | (_) |
+//   \___/|_|   |_|   |_| \_\ |_____|\___/|_|\___/
+//
+// compilado com "msp430-gcc 4.6.3 e TI 4.4.5", C99 para mcu=msp430g2553
+//
+//
+//
+// Planta
+// G =
+//               7.167
+//      ------------------------- * exp(-0.0684*s)
+//      0.03059 s^2 + 0.334 s + 1
+//
+//
+// Controlador
+// C =
+//      0.02151 s^2 + 0.2537 s + 0.7479
+//      -------------------------------
+//                     s
+//
+//
+//==========================================================================
 
-#include <msp430.h>     // PxOUT, PxIN, ...
-#include <stdint.h>     // int8_t, int16_t, ...
-#include <stdbool.h>    // bool
-#include <stdlib.h>     // itoa
-#include <string.h>     // ftoa
+#include <msp430.h>
+#include <stdlib.h> // stdlib
+#include <stdint.h> // uint8_t
+#include <stdbool.h> // bool
 
-// #define SERIAL_DBG
+#include "serial_uart.h"
 
-#define LEDPIN          BIT0    // P1.0 (RED LED)
-#define BUTTONPIN       BIT3    // P1.3 (S2)
-#define SERIALRXPIN     BIT1    // P1.1
-#define SERIALTXPIN     BIT2    // P1.2
-#define MOTORINPIN      BIT4    // P1.4
-#define MOTOROUTPIN     BIT6    // P1.6 / TA01 / GREEN LED
+//--------------------------------------------------------------------------
+// GPIO
+#define REDLEDPIN BIT0 // P1.0 (RED LED)
+#define BUTTONPIN BIT3 // P1.3 (S2)
+#define MOTORINPIN BIT4 // P1.4
+#define MOTOROUTPIN BIT6 // P1.6 / TA01 (GREEN LED)
+// servo
+#define SERVOSTOPPULSE 1000 // 1ms
+#define SERVOMAXPULSE 2000  // 2ms
+#define SERVOINIPULSE 1215 // aprox 5000 rpm
+// intervalo de velocidade
+#define RPMMAX 8000
+#define RPMMIN 2000
+// amostragem
+#define SAMPLINGINTERVAL (10000<<1)-1 // 10 ms
+// media exponencial movel
+#define NM 20.0 // numero de medias
+#define ALPHA NM/(NM+1) // coeficiente exponencial
+// ganhos do controlador
+#define KP 0.253680f
+#define KI 0.747880f
+#define KD 0.021513f
 
-#define MOTORPOLES      7.0
-#define SERVOSTOPPULSE  1000    // 1ms
-#define SERVOMAXPULSE   2000    // 2ms
-// #define RPMMAX          6000
-// #define RPMMIN          2000
-
-#define SERIALPRINTTIME 250
-
-#define NM              20.0        // numero de medias
-#define ALPHA           NM/(NM+1)   // coeficiente exponencial
-
-// void delay_us(uint16_t us);
-void delay_ms(uint16_t ms);
-void serial_config();
-void serial_print_byte(const int8_t data);
-void serial_print_string(const char* data);
+//--------------------------------------------------------------------------
+// clock
+void clock_config();
+// servo
 void servo_config();
-void servo_write_pulse(const uint16_t ms);
-// uint16_t servo_get_pulse();
-void ftoa(float n, char *res, int casas);
-float _pow(float base, float expoente);
+inline void servo_write_pulse(uint16_t ms);
+// cronometro
+void cronometro_config();
+// GPIO
+void gpio_config();
+// amostragem
+void sampling_config();
+// miscelanea
+void itoa_base_10(int32_t num, char* str);
+void delay_ms(uint16_t ms);
 
-volatile uint16_t servoPulse = 0;
+//--------------------------------------------------------------------------
+// servo
+volatile uint16_t nextPulse = 0; // prox. pulso
+volatile uint16_t setPoint = 5000; // vel. desejada
+// amostragem
+volatile bool amostrar = false;
+// timer
+volatile uint16_t timerCount = 0;
+volatile uint16_t timerOverflow = 0;
+volatile uint16_t overTimer = 0;
+// calculo
+char strSerialValue[8] = {'\0'}; // string de uso geral
+// GPIO
+volatile bool buttonFlag = true;
 
-volatile bool loopFlag = false;
-volatile bool stopFlag = false;
-// volatile bool buttonFlag = false;
+//==========================================================================
+//
+//==========================================================================
+int main(){
+    // disable watchdog timer
+    WDTCTL = WDTPW | WDTHOLD;
 
-volatile uint16_t rpm[2];
-volatile uint16_t flagTimer = 0;
-volatile int pulseWidth = SERVOSTOPPULSE;
-
-char strRpmValue[8];    // string de uso geral
-char strSerialValue[8]; // string de uso geral
-
-void main(){
-    // desabilita watchdog
-    WDTCTL = WDTPW + WDTHOLD;
-
-    // config. clock 16Mhz
-    if (0xFF == CALBC1_16MHZ){
-        while(1);
-    }
-
-    DCOCTL = 0;
-    BCSCTL1 = CALBC1_16MHZ;
-    DCOCTL = CALDCO_16MHZ;
-
-    // config. I/O
-    P1DIR |= (MOTOROUTPIN | LEDPIN);    // saidas
-    P1SEL |= (MOTOROUTPIN);             // pwm out
-    P1REN |= (MOTORINPIN | BUTTONPIN);  // habilita resistores
-    P1OUT |= (MOTORINPIN | BUTTONPIN);  // resistores pullup
-
-    P1OUT &= ~(LEDPIN);   // limpa as saidas
-
-    // config. perifericos
+    // configs iniciais
+    clock_config();
     serial_config();
     servo_config();
+    sampling_config();
+    cronometro_config();
+    gpio_config();
 
-    // zera as medidas
-    rpm[0] = rpm[1] = 0;
+    serial_print_string("\n--- START ---\n");
 
-    // configura o timer A1
-    TA1CTL    = TASSEL_2 | ID_0 | MC_1; // smclk, div 1, up CCR0
-    TA1CCTL0 |= CCIE;                   // interrupcao por comparacao
-    TA1CCR0   = 50000-1;                // @16MHz -> 1/320 = 3,125ms para estourar
+    __enable_interrupt(); // habilita interrupcoes
 
-    // configura interrupcao motor
-    P1IE  |= (MOTORINPIN | BUTTONPIN);  // habilita interrupcao
-    P1IES |= (MOTORINPIN | BUTTONPIN);  // borda de descida
-    P1IFG  = 0;             // limpa IFG
+    // calibracao do ESC
+    servo_write_pulse(SERVOMAXPULSE); // pulso max
+    P1OUT |= REDLEDPIN; // sinaliza
+    buttonFlag = true;
+    while(buttonFlag); // aguarda botao
+    P1OUT &= ~REDLEDPIN;
+    delay_ms(2000);
 
-    __enable_interrupt();
+    servo_write_pulse(SERVOSTOPPULSE); // pulso min
+    P1OUT |= REDLEDPIN; // sinaliza
+    buttonFlag = true;
+    while(buttonFlag); // aguarda botao
+    P1OUT &= ~REDLEDPIN;
+    delay_ms(2000);
 
-    servo_write_pulse(SERVOSTOPPULSE);
+    servo_write_pulse(SERVOINIPULSE); // vel inicial
 
-    loopFlag = true;
+    char generalStr[16] = {'\0'}; // string de uso geral
+    uint16_t rpmInst = 0; // velocidade instantanea
+    uint16_t rpm[2] = {0}; // velocidade em RPM (media exp movel)
+    int16_t intError = 0; // integral do erro
+    uint16_t lastSetPoint = 0;
 
+    // loop principal
     while(1){
-        if(!stopFlag){
-            P1OUT ^= LEDPIN;
-            delay_ms(SERIALPRINTTIME);
-            itoa(rpm[1], strRpmValue, 10);
-            serial_print_string(strRpmValue);
+        // intervalo de amostragem controlado por TIMER0_A1
+        if(amostrar){
+
+            amostrar = false;
+
+            // calcula a velocidade
+            float delta_t = (62.5e-9f*timerCount + 3.125e-3f*overTimer);
+            if(delta_t > 0){ // previne divisao por zero
+                rpmInst = (uint16_t)(8.5714f/delta_t); // 8.5714 = 60s/7(polos motor)
+            }
+
+            // media exponencial movel
+            rpm[1] = ALPHA*rpm[0]+(1-ALPHA)*rpmInst;
+            rpm[0] = rpm[1];
+
+            int16_t error = setPoint - rpm[0]; // erro
+
+            // limita a integral do erro em 10%
+            if(error > (0.1f*setPoint) || error < (-0.1f*setPoint)){
+                intError = 0;
+            }else{
+                intError += error;
+            }
+
+            // derivada
+            int16_t difSetPoint = setPoint - lastSetPoint;
+            lastSetPoint = setPoint;
+
+            // ajuste fino
+            int16_t ajuste = SERVOSTOPPULSE - 0;
+
+            // aplica o controlador
+            static uint16_t pulse = 0;
+//            pulse = (uint16_t)(error*KP + intError*KI - difSetPoint*KD + ajuste);
+            pulse += error;
+            servo_write_pulse(pulse);
+
+            // envia dados pela serial
+//            itoa_base_10(setPoint, generalStr);
+//            serial_print_string(generalStr);
+//            serial_print_byte('\t');
+
+//            itoa_base_10(rpm[0], generalStr);
+//            serial_print_string(generalStr);
+//            serial_print_byte('\t');
+
+//            itoa_base_10(pulse, generalStr);
+//            serial_print_string(generalStr);
+//            serial_print_byte('\t');
+
+            itoa_base_10(error, generalStr);
+            serial_print_string(generalStr);
+            serial_print_byte('\t');
+
+//            itoa_base_10(intError, generalStr);
+//            serial_print_string(generalStr);
+//            serial_print_byte('\t');
+
+//            itoa_base_10(difSetPoint, generalStr);
+//            serial_print_string(generalStr);
+//            serial_print_byte('\n');
+
+            itoa_base_10(pulse, generalStr);
+            serial_print_string(generalStr);
             serial_print_byte('\n');
         }
     }
+
+    return 0;
 }
 
-#pragma vector = PORT1_VECTOR
-__interrupt void interrupt_port_1(){
-    if (P1IFG & MOTORINPIN){
-
-        // captura tempo atual
-        uint16_t overTimer = flagTimer;
-        uint16_t timerCount = TA1R;
-        float delta_t = (62.5e-9*timerCount + 3.125e-3*overTimer);
-        flagTimer = TA1R = 0;
-
-        // conversao para RPM
-        uint16_t rpmInst = (uint16_t)((60.0/MOTORPOLES)/delta_t);
-        
-        rpm[1] = ALPHA*rpm[0]+(1-ALPHA)*rpmInst;
-        rpm[0] = rpm[1];
-        
-        // limpa flag de interrupcao
-        P1IFG &= ~MOTORINPIN;
-
-    }else if (P1IFG & BUTTONPIN){
-
-        if(loopFlag){
-
-        }
-
-        // debouncing
-        delay_ms(10);
-        while(!(P1IN & BUTTONPIN));
-        delay_ms(10);
-
-        // limpa flag de interrupcao
-        P1IFG &= ~BUTTONPIN;
-    }
-}
-
-#pragma vector = TIMER1_A0_VECTOR
-__interrupt void interrupt_timer_A1(){
-
-    ++flagTimer;
-
-    TA1CCTL0 &= ~CCIFG;
-}
-
-#pragma vector = USCIAB0RX_VECTOR
-__interrupt void serial_receive(){
-
+//==========================================================================
+// USCI0RX ISR
+// funcao: servico de interrupcao UART. Recebe valores pela serial e concatena
+//         na string strSerialValue. Limite de digitos 6 (+ end line)
+//         Se receber um valor valido, atualiza o set-point
+// retorno: nenhum
+// parametros: nenhum
+// constantes:
+//      SERIAL_DBG: debug
+//      MOTORINPIN: saida do filtro
+//==========================================================================
+#if defined(__TI_COMPILER_VERSION__) || defined(__IAR_SYSTEMS_ICC__)
+#pragma vector=USCIAB0RX_VECTOR
+__interrupt void USCI0RX_ISR(void)
+#elif defined(__GNUC__)
+void __attribute__ ((interrupt(USCIAB0RX_VECTOR))) USCI0RX_ISR(void)
+#else
+#error Compiler not supported!
+#endif
+{
     static uint8_t i = 0;
 
     static bool overflow = false;
@@ -168,118 +243,292 @@ __interrupt void serial_receive(){
 
 #ifdef SERIAL_DBG
         serial_print_string("\n*** buffer overflow ***\n");
-#endif        
-        
-        for (uint8_t j=0; j<8; j++){
+#endif
+
+        for (uint8_t j=7; j; j--){
             strSerialValue[j]=0;
         }
 
         i = 0;
     }else if(7 >= i){
-        
+
         strSerialValue[i] = val;
         i++;
 
         if ('\n' == val){
-            if(!overflow && !stopFlag){
+            if(!overflow){
                 strSerialValue[i-1] = '\0';
-                pulseWidth = atoi(strSerialValue);
-                if(SERVOSTOPPULSE <= pulseWidth && SERVOMAXPULSE >= pulseWidth ){
-                    servo_write_pulse(pulseWidth);
+                uint16_t serialVal = atoi(strSerialValue);
+                if(RPMMIN <= serialVal && RPMMAX >= serialVal){
+                    serial_print_byte('*');
+                    setPoint = serialVal;
                 }
             }else{
                 overflow=false;
             }
-        
+
             i = 0;
-            for (uint8_t j=0; j<8; j++){
+            for (uint8_t j=7; j; j--){
                 strSerialValue[j]=0;
             }
         }
     }
 }
 
-void servo_config(){
-    TA0CTL = TASSEL_2 | ID_3 | MC_1;    // SMCLK, DIV(8), UP CCR0
-    TA0CCTL1 |= OUTMOD_7;               // PWM set/reset
-    TA0CCR0 = 20000-1;                  // periodo: (16Mhz / 8 / 1000ms) * 20ms
-    TA0CCR1 = 0;                        // reset
-}
-
-void servo_write_pulse(const uint16_t ms){
-    TA0CCR1 = 2*ms;
-}
-
-// uint16_t servo_get_pulse(){
-//     return TA0CCR1;
-// }
-
-void serial_config(){
-    P1SEL  |= (SERIALRXPIN | SERIALTXPIN);
-    P1SEL2 |= (SERIALRXPIN | SERIALTXPIN);
-
-    UCA0CTL1 |= UCSWRST;
-    UCA0CTL0 &= ~(UCMODE1 + UCMODE0 + UCSYNC);
-    UCA0CTL1 |= UCSSEL_2;
-    UCA0MCTL &= ~UCOS16;
-
-    // 9600 bps
-    UCA0BR1 = 0x06;
-    UCA0BR0 = 0x82;
-    UCA0MCTL |= 0x0A;
-
-    UCA0CTL1 &= ~UCSWRST;
-
-    IE2 |= UCA0RXIE;
-}
-
-void serial_print_byte(const int8_t data){
-    // aguarda buffer vazio
-    while(!(IFG2 & UCA0TXIFG));
-    // escreve o dado no registrador
-    UCA0TXBUF = data;
-}
-
-void serial_print_string(const char* data){
-    while(*data){
-        serial_print_byte(*data);
-        data++;
+//==========================================================================
+// PORT1 VECTOR ISR
+// funcao: servico de interrupcao PORT1. Captura valores dos timers e botao
+// retorno: nenhum
+// parametros: nenhum
+// constantes:
+//      BUTTONPIN: botao
+//      MOTORINPIN: saida do filtro
+//==========================================================================
+#if defined(__TI_COMPILER_VERSION__) || defined(__IAR_SYSTEMS_ICC__)
+#pragma vector=PORT1_VECTOR
+__interrupt void PORT1_VECTOR_ISR(void)
+#elif defined(__GNUC__)
+void __attribute__ ((interrupt(PORT1_VECTOR))) PORT1_VECTOR_ISR(void)
+#else
+#error Compiler not supported!
+#endif
+{
+    if(P1IFG & BUTTONPIN){
+        buttonFlag = false;
+        // limpa flag de interrupcao
+        P1IFG &= ~BUTTONPIN;
+    }else if(P1IFG & MOTORINPIN){
+        // captura tempo atual
+        overTimer = timerOverflow;
+        timerCount = TA1R;
+        // zera os contadores
+        timerOverflow = TA1R = 0;
+        // limpa flag de interrupcao
+        P1IFG &= ~MOTORINPIN;
     }
 }
 
+//==========================================================================
+// TIMER 0 A0
+// funcao: servico de interrupcao TIMER 0 A0. Limpa IFG
+// retorno: nenhum
+// parametros: nenhum
+// constantes: nenhuma
+//==========================================================================
+#if defined(__TI_COMPILER_VERSION__) || defined(__IAR_SYSTEMS_ICC__)
+#pragma vector=TIMER0_A0_VECTOR
+__interrupt void Timer_A0(void)
+#elif defined(__GNUC__)
+void __attribute__ ((interrupt(TIMER0_A0_VECTOR))) Timer_A0(void)
+#else
+#error Compiler not supported!
+#endif
+{
+//    TA0CCR1 = nextPulse;
+    TA0CCTL0 &= ~CCIFG;
+}
+
+//==========================================================================
+// TIMER 1 A0
+// funcao: servico de interrupcao TIMER 1 A0. Incrementa estouro do timer
+// retorno: nenhum
+// parametros: nenhum
+// constantes: nenhuma
+//==========================================================================
+#if defined(__TI_COMPILER_VERSION__) || defined(__IAR_SYSTEMS_ICC__)
+#pragma vector=TIMER1_A0_VECTOR
+__interrupt void Timer1_A0(void)
+#elif defined(__GNUC__)
+void __attribute__ ((interrupt(TIMER1_A0_VECTOR))) Timer1_A0(void)
+#else
+#error Compiler not supported!
+#endif
+{
+    // incrementa a flag estouro do timer
+    ++timerOverflow;
+    TA1CCTL0 &= ~CCIFG;
+}
+
+//==========================================================================
+// TIMER 0 A1
+// funcao: servico de interrupcao TIMER 0 A1. Atualiza PWM (TA0CCR1),
+//         prox. amostragem (TA0CCR2), gatilho para amostra
+// retorno: nenhum
+// parametros: nenhum
+// constantes:
+//      SAMPLINGINTERVAL: tempo de amostragem
+//==========================================================================
+#if defined(__TI_COMPILER_VERSION__) || defined(__IAR_SYSTEMS_ICC__)
+#pragma vector=TIMER0_A1_VECTOR
+__interrupt void Timer0_A1(void)
+#elif defined(__GNUC__)
+void __attribute__ ((interrupt(TIMER0_A1_VECTOR))) Timer0_A1 (void)
+#else
+#error Compiler not supported!
+#endif
+{
+    switch(__even_in_range(TA0IV, TA0IV_TAIFG)){
+//        case TA0IV_NONE: break;
+//        case TA0IV_TACCR1: break;
+        case TA0IV_TACCR2:
+            amostrar = true; // habilita envio
+            TA0CCR2 += SAMPLINGINTERVAL; // prox. envio
+            break;
+//        case TA0IV_6: break;
+//        case TA0IV_8: break;
+        case TA0IV_TAIFG:
+            amostrar = true; // habilita envio
+            TA0CCR1 = nextPulse; // atualiza pwm
+            TA0CCR2 = SAMPLINGINTERVAL; // prox.envio
+            break;
+        default:
+//            amostrar = true; // habilita amostragem
+//            TA0CCR2 += SAMPLINGINTERVAL; // prox. envio
+            break;
+    }
+}
+
+//==========================================================================
+// CLOCK CONFIG
+// funcao: configura clock principal @16MHz
+// retorno: nenhum
+// parametros: nenhum
+// constantes: nenhuma
+//==========================================================================
+void clock_config(){
+    if (0xFF == CALBC1_16MHZ){
+        while(1);
+    }
+
+    DCOCTL = 0;
+    BCSCTL1 = CALBC1_16MHZ;
+    DCOCTL = CALDCO_16MHZ;
+}
+
+//==========================================================================
+// SERVO CONFIG
+// funcao: configura PWM @50Hz
+// retorno: nenhum
+// parametros: duty cycle, em ms (uint16_t)
+// constantes: nenhuma
+//==========================================================================
+void servo_config(){
+    TA0CTL |= TASSEL_2 | ID_3 | MC_1 | TAIE; // SMCLK, DIV(8), UP CCR0, INT
+//    TA0CCTL0 |= CCIE; //INT
+    TA0CCR0 = 40000-1; // periodo (16Mhz/8/1000ms) * 20ms = 40_000 ciclos
+    TA0CCTL1 |= OUTMOD_7; // reset/set
+    TA0CCR1 = 0; // reset
+}
+
+//==========================================================================
+// SERVO WRITE PULSE
+// funcao: aplica o valor de pulso para o prox. PWM
+// retorno: nenhum
+// parametros: duty cycle, em ms (uint16_t)
+// constantes:
+//      SERVOMAXPULSE: limite superior
+//      SERVOMINPULSE: limite inferior
+//==========================================================================
+inline void servo_write_pulse(uint16_t ms){
+    // limita o pulso
+    if(ms > SERVOMAXPULSE){
+        ms = SERVOMAXPULSE;
+    }else if(nextPulse < SERVOSTOPPULSE){
+        ms = SERVOSTOPPULSE;
+    }
+
+    nextPulse = (ms<<1)-1; // prox. pwm
+}
+
+//==========================================================================
+// GPIO CONFIG
+// funcao: configura pinos entrada/saida/funcao
+// retorno: nenhum
+// parametros: nenhum
+// constantes:
+//      MOTOROUTPIN: entrada do filtro do motor
+//      MOTORINPIN: saida PWM para o ESC
+//      REDLEDPIN: led vermelho (sinalizacao)
+//      BUTTONPIN: botao
+//==========================================================================
+void gpio_config(){
+     P1DIR |= (MOTOROUTPIN|REDLEDPIN); // saidas
+     P1SEL |= (MOTOROUTPIN); // pwm out
+     P1REN |= (MOTORINPIN|BUTTONPIN); // habilita resistores
+     P1OUT |= (MOTORINPIN|BUTTONPIN); // resistores pullup
+     P1OUT &= ~(REDLEDPIN); // limpa as saidas
+
+     P1IE |= (MOTORINPIN|BUTTONPIN); // habilita interrupcao
+     P1IES |= (MOTORINPIN|BUTTONPIN); // borda de descida
+     P1IFG &= ~(MOTORINPIN|BUTTONPIN); // limpa IFG
+}
+
+//==========================================================================
+// CRONOMETRO CONFIG
+// funcao: configura TA1CCR0 para estourar a cada 3,125ms (calc. velocidade)
+// retorno: nenhum
+// parametros: nenhum
+// constantes: nenhuma
+//==========================================================================
+void cronometro_config(){
+    // configura o timer A1
+    TA1CTL = TASSEL_2 | ID_0 | MC_1; // smclk, div 1, up CCR0
+    TA1CCTL0 |= CCIE; // interrupcao por comparacao
+    TA1CCR0 = 50000-1; // @16MHz: 1/320 = 3,125ms para estourar
+}
+
+//==========================================================================
+// SAMPLING CONFIG
+// funcao: configura o tempo de amostragem (TA0CCR2)
+// retorno: nenhum
+// parametros: nenhum
+// constantes: SAMPLINGINTERVAL (2*tempo_de_amostragem-1) (em ms)
+//==========================================================================
+void sampling_config(){
+    TA0CCTL2 |= CCIE; //INT
+    TA0CCR2 = SAMPLINGINTERVAL; // tempo de amostragem
+}
+
+//==========================================================================
+// ITOA BASE 10
+// funcao: converte um numero inteiro para c_string
+// retorno: nenhum
+// parametros: numero (uint32_t), string (char*)
+// constantes: nenhuma
+//==========================================================================
+void itoa_base_10(int32_t num, char* str){
+
+    char* ptr = str, *ptr1 = str, char_tmp;
+    int int_tmp;
+
+    do{
+        int_tmp = num;
+        num /= 10;
+        const char charTable[] = "zyxwvutsrqponmlkjihgfedcba9876543210"
+                                 "123456789abcdefghijklmnopqrstuvwxyz";
+        *ptr++ = charTable[35 + (int_tmp - num * 10)];
+    }while(num);
+
+    if(int_tmp < 0) *ptr++ = '-';
+
+    *ptr-- = '\0';
+
+    while(ptr1 < ptr){
+        char_tmp = *ptr;
+        *ptr--= *ptr1;
+        *ptr1++ = char_tmp;
+    }
+}
+
+//==========================================================================
+// DELAY MS
+// funcao: pausa o programa
+// retorno: nenhum
+// parametros: tempo de espera, em ms (uint16_t)
+// constantes: nenhuma
+//==========================================================================
 void delay_ms(uint16_t ms){
     while (ms--) {
         __delay_cycles(16000);
     }
 }
-
-/*void delay_us(uint16_t us){
-    while(us--){
-        __delay_cycles(16);
-    }
-}*/
-
-#ifdef SERIAL_DBG
-void ftoa(float n, char *res, int casas){
-    // parte inteira do número
-    int iparte = (int) n;
-    // parte flutuante (após a vírgula)
-    float fparte = n - (float) iparte;
-    // carrega a parte inteira na string
-    itoa(iparte, res, 10);
-    if (casas != 0){
-        // adiciona o 'ponto'
-        strcat(res, ".");
-        // tranforma a parte flutuante
-        fparte = fparte * f_pow(10, casas);
-        // concatena a parte flutuante à parte inteira
-        itoa((int)fparte, res + strlen(res), 10);
-    }
-}
-
-float f_pow(float base, float expoente){
-    float n = base;
-    while(--expoente) n *= base;
-    return n;
-}
-#endif

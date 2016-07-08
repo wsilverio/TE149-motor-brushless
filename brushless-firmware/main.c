@@ -49,16 +49,16 @@
 #define MOTORINPIN BIT4 // P1.4
 #define MOTOROUTPIN BIT6 // P1.6 / TA01 (GREEN LED)
 // servo
-#define SERVOSTOPPULSE 1000 // 1ms
-#define SERVOMAXPULSE 2000  // 2ms
-#define SERVOINIPULSE 1215 // aprox 5000 rpm
+const int16_t SERVOMINPULSE = 1110; // aprox ? rpm
+const int16_t SERVOSTOPPULSE = 1000; // 1ms
+const int16_t SERVOMAXPULSE = 2000; // 2ms
 // intervalo de velocidade
-#define RPMMAX 8000
-#define RPMMIN 2000
+const int16_t RPMMAX = 8000;
+const int16_t RPMMIN = 2000;
 // amostragem
 #define SAMPLINGINTERVAL (10000<<1)-1 // 10 ms
 // media exponencial movel
-#define NM 20.0 // numero de medias
+#define NM 20.0f // numero de medias
 #define ALPHA NM/(NM+1) // coeficiente exponencial
 // ganhos do controlador
 
@@ -68,9 +68,9 @@
 // #define KD 0.021513f
 
 // // Prof
-#define KP 1.6779
-#define KI 0.1766
-#define KD 7.9700
+#define KP 1.6779f
+#define KI 0.1766f
+#define KD 7.9700f
 
 //--------------------------------------------------------------------------
 // clock
@@ -100,9 +100,8 @@ volatile uint16_t timerOverflow = 0;
 volatile uint16_t overTimer = 0;
 // calculo
 char strSerialValue[8] = {'\0'}; // string de uso geral
-// GPIO
-volatile bool buttonFlag = true;
-
+// serial
+volatile bool writeMode = true;
 //==========================================================================
 //
 //==========================================================================
@@ -122,22 +121,8 @@ int main(){
 
     __enable_interrupt(); // habilita interrupcoes
 
-   // calibracao do ESC
-    servo_write_pulse(SERVOMAXPULSE); // pulso max
-    P1OUT |= REDLEDPIN; // sinaliza
-    buttonFlag = true;
-    while(buttonFlag); // aguarda botao
-    P1OUT &= ~REDLEDPIN;
-    delay_ms(2000);
-
-    servo_write_pulse(SERVOSTOPPULSE); // pulso min
-    P1OUT |= REDLEDPIN; // sinaliza
-    buttonFlag = true;
-    while(buttonFlag); // aguarda botao
-    P1OUT &= ~REDLEDPIN;
-    delay_ms(2000);
-
-    servo_write_pulse(SERVOINIPULSE); // vel inicial
+    // acende o led em modo WRITE
+    P1OUT |= REDLEDPIN;
 
     char generalStr[16] = {'\0'}; // string de uso geral
     uint16_t rpmInst = 0; // velocidade instantanea
@@ -148,9 +133,9 @@ int main(){
     // loop principal
     while(1){
         // intervalo de amostragem controlado por TIMER0_A1
-        if(amostrar){
+        if(amostrar && !writeMode){
 
-            amostrar = false;
+            amostrar = false; // prox amostragem
 
             // calcula a velocidade
             float delta_t = (62.5e-9f*timerCount + 3.125e-3f*overTimer);
@@ -185,32 +170,32 @@ int main(){
             servo_write_pulse(pulse);
 
             // envia dados pela serial
-           // itoa_base_10(setPoint, generalStr);
-           // serial_print_string(generalStr);
-           // serial_print_byte('\t');
+            itoa_base_10(setPoint, generalStr);
+            serial_print_string(generalStr);
+            serial_print_byte('\t');
 
-           itoa_base_10(rpm[0], generalStr);
-           serial_print_string(generalStr);
-           serial_print_byte('\t');
+            itoa_base_10(rpm[0], generalStr);
+            serial_print_string(generalStr);
+            serial_print_byte('\t');
 
             itoa_base_10(error, generalStr);
             serial_print_string(generalStr);
             serial_print_byte('\t');
 
-           // itoa_base_10(nextPulse, generalStr);
-           // serial_print_string(generalStr);
-           // serial_print_byte('\t');            
+            itoa_base_10(intError, generalStr);
+            serial_print_string(generalStr);
+            serial_print_byte('\t');
 
-           itoa_base_10(intError, generalStr);
-           serial_print_string(generalStr);
-           serial_print_byte('\t');
+            itoa_base_10(difRPM, generalStr);
+            serial_print_string(generalStr);
+            serial_print_byte('\t');
 
-           // itoa_base_10(difRPM, generalStr);
-           // serial_print_string(generalStr);
-           // serial_print_byte('\t');
+            itoa_base_10(pulse, generalStr);
+            serial_print_string(generalStr);
+            serial_print_byte('\t');
 
-            // itoa_base_10(pulse, generalStr);
-            // serial_print_string(generalStr);
+            itoa_base_10(nextPulse, generalStr);
+            serial_print_string(generalStr);
             // serial_print_byte('\t');
 
             serial_print_byte('\n');
@@ -268,15 +253,19 @@ void __attribute__ ((interrupt(USCIAB0RX_VECTOR))) USCI0RX_ISR(void)
             if(!overflow){
                 strSerialValue[i-1] = '\0';
                 uint16_t serialVal = atoi(strSerialValue);
-                
-                if(RPMMIN > serialVal){
-                    serialVal = RPMMIN;
-                }else if(RPMMAX < serialVal){
-                    serialVal = RPMMAX;
+
+                if(writeMode){
+                    nextPulse = serialVal;
+                }else{
+                    if(RPMMIN > serialVal){
+                        serialVal = RPMMIN;
+                    }else if(RPMMAX < serialVal){
+                        serialVal = RPMMAX;
+                    }
+                    setPoint = serialVal;
                 }
 
                 serial_print_byte('*');
-                setPoint = serialVal;
 
             }else{
                 overflow=false;
@@ -309,7 +298,13 @@ void __attribute__ ((interrupt(PORT1_VECTOR))) PORT1_VECTOR_ISR(void)
 #endif
 {
     if(P1IFG & BUTTONPIN){
-        buttonFlag = false;
+        writeMode = !writeMode;
+        // acende o led em modo WRITE
+        P1OUT = (writeMode)?(P1OUT|REDLEDPIN):(P1OUT&~REDLEDPIN);
+        // debouncing
+        delay_ms(8);
+        while(!(P1IN&BUTTONPIN));
+        delay_ms(8);
         // limpa flag de interrupcao
         P1IFG &= ~BUTTONPIN;
     }else if(P1IFG & MOTORINPIN){
@@ -443,20 +438,22 @@ void servo_config(){
 // SERVO WRITE PULSE
 // funcao: aplica o valor de pulso para o prox. PWM
 // retorno: nenhum
-// parametros: duty cycle, em ms (uint16_t)
+// parametros: duty cycle, em ms (int16_t)
 // constantes:
 //      SERVOMAXPULSE: limite superior
-//      SERVOMINPULSE: limite inferior
+//      SERVOMINPULSE: limite para comecar a rodar
 //==========================================================================
 inline void servo_write_pulse(int16_t ms){
     // limita o pulso
-    if(ms > SERVOMAXPULSE){
-        ms = SERVOMAXPULSE;
-    }else if(nextPulse < SERVOSTOPPULSE){
-        ms = SERVOSTOPPULSE;
+    if(!writeMode){
+        if(ms > SERVOMAXPULSE){
+           ms = SERVOMAXPULSE;
+        }else if(nextPulse < SERVOMINPULSE){
+            ms = SERVOMINPULSE;
+        }   
     }
 
-    nextPulse = (ms<<1)-1; // prox. pwm
+    nextPulse = (((uint16_t)(ms))<<1)-1; // prox. pwm
 }
 
 //==========================================================================

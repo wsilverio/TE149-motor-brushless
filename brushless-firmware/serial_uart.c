@@ -22,6 +22,7 @@ void serial_config(){
     UCA0CTL1 |= UCSSEL_2;
     uint16_t ucbr;
     uint8_t ucbrs;
+    uint8_t ucbrf;
 
 #ifndef SERIAL_SMCLK
 #error SERIAL_SMCLK is not defined
@@ -58,6 +59,11 @@ void serial_config(){
 #elif SERIAL_BAUD == 115200
     ucbr = 138;
     ucbrs = 7;
+#elif SERIAL_BAUD == 230400
+    ucbr = 4;
+    ucbrs = 5;
+    ucbrf = 3;
+    UCA0MCTL |= (ucbrf<<4) | UCOS16;
 #elif SERIAL_BAUD == 256000
     ucbr = 62;
     ucbrs = 4;
@@ -70,7 +76,7 @@ void serial_config(){
 
     UCA0BR0 = (ucbr&0x00FF);
     UCA0BR1 = (ucbr&0xFF00)>>8;
-    UCA0MCTL = (ucbrs<<1);
+    UCA0MCTL |= (ucbrs<<1);    
 
     // function select registers
     P1SEL  |= (SERIALRXPIN|SERIALTXPIN);

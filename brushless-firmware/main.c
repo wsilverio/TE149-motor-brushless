@@ -48,32 +48,37 @@
 #define BUTTONPIN BIT3 // P1.3 (S2)
 #define MOTORINPIN BIT4 // P1.4
 #define MOTOROUTPIN BIT6 // P1.6 / TA01 (GREEN LED)
+
 // servo
 const int16_t SERVOMINPULSE = 1100; // aprox ? rpm
 const int16_t SERVOSTOPPULSE = 1000; // 1ms
-const int16_t SERVOMAXPULSE = 2000; // 2ms
+const int16_t SERVOMAXPULSE = 1300; // 2ms
+
 // intervalo de velocidade
-const int16_t RPMMAX = 8000;
+const int16_t RPMMAX = 6500;
 const int16_t RPMMIN = 2000;
+
 // amostragem
 #define SAMPLINGINTERVAL (10000<<1)-1 // 10 ms
+
 // media exponencial movel
 #define NM 20.0f // numero de medias
 #define ALPHA NM/(NM+1) // coeficiente exponencial
-// ganhos do controlador
 
-// multiplicar pelo tempo de amostragem ************************************8
-
-// PID TUNNER
+// controlador PID
+#define TUNER
+// PID TUNER
+#ifdef TUNER
+#define Ts 10e-3
 #define KP 0.253680f
-#define KI 0.00747880f
-#define KD 2.1513f
-
-// // Prof
-// #define KP 1.6779f
-// #define KI 0.1766f
-// #define KD 7.9700f
-
+#define KI 0.74788f*Ts
+#define KD 0.021513f/Ts
+#else
+// Ziegler Nichols
+#define KP 1.6779f
+#define KI 0.1766f
+#define KD 7.9700f
+#endif
 //--------------------------------------------------------------------------
 // clock
 void clock_config();
@@ -130,17 +135,10 @@ int main(){
     uint16_t rpmInst = 0; // velocidade instantanea
     uint16_t rpm[2] = {0}; // velocidade em RPM (media exp movel)
     int16_t intError = 0; // integral do erro
-    uint16_t lastSetRPM = 0;
 
     // loop principal
     while(1){
-        if(writeMode){
-            // itoa_base_10(nextPulse, generalStr);
-            // serial_print_string(generalStr);
-            // serial_print_byte('\n');
-            // delay_ms(10);
-
-        }else if(amostrar){ // intervalo de amostragem controlado por TIMER0_A1
+        if(amostrar){ // intervalo de amostragem controlado por TIMER0_A1
 
             amostrar = false; // prox amostragem
 
@@ -154,9 +152,21 @@ int main(){
 
             // media exponencial movel
             rpm[1] = ALPHA*rpm[0]+(1-ALPHA)*rpmInst;
+            
+            // derivada
+            int16_t difRPM = rpm[1] - rpm[0];
             rpm[0] = rpm[1];
 
-            int16_t error = setPoint - rpm[0]; // erro
+            if(writeMode){
+                // envia velocidade pela serial
+                itoa_base_10(rpm[0], generalStr);
+                serial_print_string(generalStr);
+                serial_print_byte('\n');
+                
+                continue; // retorna para o loop
+            }
+
+            int16_t error = setPoint - rpm[1]; // erro
 
             // limita a integral do erro em 10%
             if(error > (0.1f*setPoint) || error < (-0.1f*setPoint)){
@@ -165,40 +175,41 @@ int main(){
                 intError += error;
             }
 
-            // derivada
-            int16_t difRPM = rpm[0] - lastSetRPM;
-            lastSetRPM = rpm[0];
+            // calcula o pulso
+            int16_t pulse = (int16_t)(
+                                    error*KP + 
+                                    intError*KI + 
+                                    -difRPM*KD +
+                                    SERVOSTOPPULSE);
 
             // aplica o controlador
-            int16_t pulse = (int16_t)(error*KP + intError*KI - difRPM*KD + SERVOSTOPPULSE);
-            
             servo_write_pulse(pulse);
-
-            // envia dados a cada 10 execucoes
+            
+            // envia dados a cada 10 execucoes no modo RPM
             static uint8_t n = 10;
-           
+
             if(!(n--)){
                 n = 10;
                 // envia dados pela serial
-                // itoa_base_10(setPoint, generalStr);
-                // serial_print_string(generalStr);
-                // serial_print_byte('\t');
+                itoa_base_10(setPoint, generalStr);
+                serial_print_string(generalStr);
+                serial_print_byte('\t');
     
                 itoa_base_10(rpm[0], generalStr);
                 serial_print_string(generalStr);
                 serial_print_byte('\t');
     
-                // itoa_base_10(error, generalStr);
-                // serial_print_string(generalStr);
-                // serial_print_byte('\t');
+                itoa_base_10(error, generalStr);
+                serial_print_string(generalStr);
+                serial_print_byte('\t');
     
-                // itoa_base_10(intError, generalStr);
-                // serial_print_string(generalStr);
-                // serial_print_byte('\t');
+                itoa_base_10(intError, generalStr);
+                serial_print_string(generalStr);
+                serial_print_byte('\t');
     
-                // itoa_base_10(difRPM, generalStr);
-                // serial_print_string(generalStr);
-                // serial_print_byte('\t');
+                itoa_base_10(difRPM, generalStr);
+                serial_print_string(generalStr);
+                serial_print_byte('\t');
     
                 itoa_base_10(pulse, generalStr);
                 serial_print_string(generalStr);
@@ -209,7 +220,6 @@ int main(){
     
                 serial_print_byte('\n');
             }
-
         }
     }
 
@@ -276,7 +286,8 @@ void __attribute__ ((interrupt(USCIAB0RX_VECTOR))) USCI0RX_ISR(void)
                     setPoint = serialVal;
                 }
 
-                serial_print_byte('*');
+                // informa atualizacao
+                serial_print_string("\n***\n\n");
 
             }else{
                 overflow=false;

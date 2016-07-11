@@ -64,6 +64,11 @@ void serial_config(){
     ucbrs = 5;
     ucbrf = 3;
     UCA0MCTL |= (ucbrf<<4) | UCOS16;
+#elif SERIAL_BAUD == 460800
+    ucbr = 2;
+    ucbrs = 3;
+    ucbrf = 2;
+    UCA0MCTL |= (ucbrf<<4) | UCOS16;
 #elif SERIAL_BAUD == 256000
     ucbr = 62;
     ucbrs = 4;

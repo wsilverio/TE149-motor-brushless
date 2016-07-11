@@ -135,8 +135,7 @@ read_message(/*mavlink_message_t &message*/)
     // }
 
     // // Done!
-    // return msgReceived;
-    return 0;
+    return msgReceived;
 }
 
 // ------------------------------------------------------------------------------

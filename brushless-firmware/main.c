@@ -66,7 +66,7 @@ const int16_t RPMMIN = 2000;
 #define ALPHA NM/(NM+1) // coeficiente exponencial
 
 // controlador PID
-#define TUNER
+// #define TUNER
 // PID TUNER
 #ifdef TUNER
 #define Ts 10e-3

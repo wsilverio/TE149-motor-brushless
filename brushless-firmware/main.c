@@ -21,14 +21,14 @@
 //
 // Planta
 // G =
-//               7.167
-//      ------------------------- * exp(-0.0684*s)
-//      0.03059 s^2 + 0.334 s + 1
+//                26.57
+//      -------------------------- * exp(-0.0665*s)
+//      0.03054 s^2 + 0.3522 s + 1
 //
 //
 // Controlador
 // C =
-//      0.02151 s^2 + 0.2537 s + 0.7479
+//      0.006837 s^2 + 0.081 s + 0.2399
 //      -------------------------------
 //                     s
 //
@@ -50,12 +50,12 @@
 #define MOTOROUTPIN BIT6 // P1.6 / TA01 (GREEN LED)
 
 // servo
-const int16_t SERVOMINPULSE = 1100; // aprox ? rpm
+const int16_t SERVOMINPULSE = 1200; // aprox 1250 rpm
 const int16_t SERVOSTOPPULSE = 1000; // 1ms
 const int16_t SERVOMAXPULSE = 1300; // 2ms
 
 // intervalo de velocidade
-const int16_t RPMMAX = 6500;
+const int16_t RPMMAX = 6000;
 const int16_t RPMMIN = 2000;
 
 // amostragem
@@ -70,14 +70,14 @@ const int16_t RPMMIN = 2000;
 // PID TUNER
 #ifdef TUNER
 #define Ts 10e-3
-#define KP 0.253680f
-#define KI 0.74788f*Ts
-#define KD 0.021513f/Ts
+#define KP 0.081f
+#define KI 0.2399f*Ts
+#define KD 0.0068371f/Ts
 #else
 // Ziegler Nichols
-#define KP 1.6779f
-#define KI 0.1766f
-#define KD 7.9700f
+#define KP 0.5002f
+#define KI 0.0548f
+#define KD 2.2811f
 #endif
 //--------------------------------------------------------------------------
 // clock
@@ -287,7 +287,9 @@ void __attribute__ ((interrupt(USCIAB0RX_VECTOR))) USCI0RX_ISR(void)
                 }
 
                 // informa atualizacao
-                serial_print_string("\n***\n\n");
+                serial_print_string("\n*** ");
+                serial_print_string(strSerialValue);
+                serial_print_string(" ***\n\n");
 
             }else{
                 overflow=false;

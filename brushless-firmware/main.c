@@ -52,7 +52,7 @@
 // servo
 const int16_t SERVOMINPULSE = 1200; // aprox 1250 rpm
 const int16_t SERVOSTOPPULSE = 1000; // 1ms
-const int16_t SERVOMAXPULSE = 1300; // 2ms
+const int16_t SERVOMAXPULSE = 1600; // aprox 6500 rpm
 
 // intervalo de velocidade
 const int16_t RPMMAX = 6000;
@@ -199,25 +199,25 @@ int main(){
                 serial_print_string(generalStr);
                 serial_print_byte('\t');
     
-                itoa_base_10(error, generalStr);
-                serial_print_string(generalStr);
-                serial_print_byte('\t');
+                // itoa_base_10(error, generalStr);
+                // serial_print_string(generalStr);
+                // serial_print_byte('\t');
     
-                itoa_base_10(intError, generalStr);
-                serial_print_string(generalStr);
-                serial_print_byte('\t');
+                // itoa_base_10(intError, generalStr);
+                // serial_print_string(generalStr);
+                // serial_print_byte('\t');
     
-                itoa_base_10(difRPM, generalStr);
-                serial_print_string(generalStr);
-                serial_print_byte('\t');
+                // itoa_base_10(difRPM, generalStr);
+                // serial_print_string(generalStr);
+                // serial_print_byte('\t');
     
                 itoa_base_10(pulse, generalStr);
                 serial_print_string(generalStr);
                 serial_print_byte('\t');
     
-                itoa_base_10((nextPulse+1)>>1, generalStr);
-                serial_print_string(generalStr);
-    
+                // itoa_base_10((nextPulse+1)>>1, generalStr);
+                // serial_print_string(generalStr);
+
                 serial_print_byte('\n');
             }
         }

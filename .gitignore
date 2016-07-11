@@ -1,3 +1,6 @@
+# Folders
+brushless-panel/third-party/imgui/**
+
 # Compiled source #
 ###################
 *.elf

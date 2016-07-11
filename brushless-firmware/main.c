@@ -260,7 +260,7 @@ void __attribute__ ((interrupt(USCIAB0RX_VECTOR))) USCI0RX_ISR(void)
         serial_print_string("\n*** buffer overflow ***\n");
 #endif
 
-        for (uint8_t j=7; j; j--){
+        for(uint8_t j=0; j<8; j++){
             strSerialValue[j]=0;
         }
 
@@ -296,7 +296,7 @@ void __attribute__ ((interrupt(USCIAB0RX_VECTOR))) USCI0RX_ISR(void)
             }
 
             i = 0;
-            for (uint8_t j=7; j; j--){
+            for(uint8_t j=0; j<8; j++){
                 strSerialValue[j]=0;
             }
         }
@@ -470,9 +470,9 @@ void servo_config(){
 inline void servo_write_pulse(int16_t ms){
     // limita o pulso
     if(!writeMode){
-        if(ms > SERVOMAXPULSE){
+        if(SERVOMAXPULSE < ms){
            ms = SERVOMAXPULSE;
-        }else if(ms < SERVOMINPULSE){
+        }else if(SERVOMINPULSE > ms){
             ms = SERVOMINPULSE;
         }   
     }

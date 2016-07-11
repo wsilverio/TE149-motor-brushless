@@ -9,7 +9,7 @@ flash:	firmware
 
 panel:
 	@echo "brushless_panel.run"
-	@c++ `sdl2-config --cflags` -I brushless-panel/third-party/imgui brushless-panel/main.cpp brushless-panel/imgui_impl_sdl.cpp brushless-panel/third-party/imgui/imgui*.cpp `sdl2-config --libs` -lGL -o brushless-panel/brushless_panel.run
+	@g++ -std=c++11 `sdl2-config --cflags` -I brushless-panel/third-party/imgui brushless-panel/serial_port.cpp brushless-panel/main.cpp brushless-panel/imgui_impl_sdl.cpp brushless-panel/third-party/imgui/imgui*.cpp `sdl2-config --libs` -lGL -lpthread -o brushless-panel/brushless_panel.run
 
 install_dependencies:
 	apt-get install build-essential mspdebug gcc-msp430

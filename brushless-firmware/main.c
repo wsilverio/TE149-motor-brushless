@@ -186,7 +186,7 @@ int main(){
             pulseMME[0] = pulseMME[1];
 
             // aplica o controlador
-            servo_write_pulse(pulse);
+            servo_write_pulse(pulseMME[1]);
             
             // envia dados pela serial
             // itoa_base_10(setPoint, generalStr);

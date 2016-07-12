@@ -175,7 +175,11 @@ int main(){
             }
 
             // calcula o pulso
-            int16_t pulse = (int16_t)(error*KP + intError*KI + -difRPM*KD + SERVOSTOPPULSE);
+            int16_t pulse = (int16_t)(  
+                                        error*KP + 
+                                        intError*KI + 
+                                        -difRPM*KD + 
+                                        SERVOSTOPPULSE);
 
             // media movel exponencial
             pulseMME[1] = ALPHA*pulseMME[0]+(1-ALPHA)*pulse;
